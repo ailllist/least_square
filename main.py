@@ -14,11 +14,15 @@ def RotSatPos(sat: gp.GpsSat, obs):
 
 def least_square_est(H: np.ndarray, y: np.ndarray, x: np.ndarray):
     # TODO x관련 식 추가 해줘야됨.
-    for i in range(5):    
-        p_x_hat = np.linalg.inv(H.T@H)
-        x_hat = p_x_hat@H.T@y
-        y = y + x_hat
-        print(x_hat)
+    p_x_hat = np.linalg.inv(H.T@H)
+    x_hat = p_x_hat@H.T@y
+    x = x + x_hat
+    print("x_hat: ", x_hat)
+    print("norm(x_hat[x, y, z]): ", np.linalg.norm(x_hat[:3]))
+    print("norm(x_hat[x, y, z, delta_tr]): ", np.linalg.norm(x_hat))
+    print("x: ", x)
+    print("---------------------------------------------------")
+    return x
 
 APPROX_POSITION_XYZ = [-3062023.5630, 4055449.0330, 3841819.2130]
 calc_time = [1, 45, 0] # hour, min, sec, GPS_Week_sec
@@ -43,7 +47,7 @@ for i in keys:
         time_dist = tmp_dist
         best_time = i
 
-print("best_time : ", best_time)
+# print("best_time : ", best_time)
 _15osat = tgpt[best_time]
 obs_sats = list(_15osat.keys())
 obs_gps_sats = []
@@ -61,37 +65,37 @@ for i in obs_gps_sats:
     else:
         GpsSat_list = gp.read_data(i[1:])
     bd_sat = gp.find_best_time(GpsSat_list, calc_time)
-    print(bd_sat.PRN, bd_sat.Epoch)
+    # print(bd_sat.PRN, bd_sat.Epoch)
     tot_data[i] = bd_sat
 gps_prn_list = list(tot_data.keys())
 
 H = np.zeros((len(gps_prn_list), 4))
 y = np.zeros(len(gps_prn_list))
+x = np.array([-3062023.5630, 4055449.0330, 3841819.2130, 1])
 
-for num, i in enumerate(gps_prn_list):
+for eph in range(10):
+    print("-------------------------%d-------------------------" % eph)
+    for num, i in enumerate(gps_prn_list):
 
-    CA_code = float(_15osat[i]["C1"][0].strip())
+        CA_code = float(_15osat[i]["C1"][0].strip())
 
-    STT = CA_code / 299_792_458
-    tot_data[i].calc_gps_pos(calc_time, STT)
-    RotSatPos(tot_data[i], CA_code)
-    tk = tot_data[i].calc_tk(calc_time, STT)
-    delta_ts = tot_data[i].SV_clock_bias + tot_data[i].SV_clock_drift * tk
+        STT = CA_code / 299_792_458
+        tot_data[i].calc_gps_pos(calc_time, STT)
+        RotSatPos(tot_data[i], CA_code)
+        tk = tot_data[i].calc_tk(calc_time, STT)
+        delta_ts = tot_data[i].SV_clock_bias + tot_data[i].SV_clock_drift * tk
 
-    cal_x = tot_data[i].xk - APPROX_POSITION_XYZ[0]
-    cal_y = tot_data[i].yk - APPROX_POSITION_XYZ[1]
-    cal_z = tot_data[i].zk - APPROX_POSITION_XYZ[2]
-    rho = math.sqrt(cal_x**2 + cal_y**2 + cal_z**2) + 299_792_458*(-1*delta_ts)
+        cal_x = tot_data[i].xk - x[0]
+        cal_y = tot_data[i].yk - x[1]
+        cal_z = tot_data[i].zk - x[2]
+        rho = math.sqrt(cal_x**2 + cal_y**2 + cal_z**2) + 299_792_458*(-1*delta_ts)
 
-    y[num] = CA_code - rho
-    H[num][0] = -1 * (cal_x)/rho
-    H[num][1] = -1 * (cal_y)/rho
-    H[num][2] = -1 * (cal_z)/rho
-    # H[num][3] = 299_792_458 # (m)
-    H[num][3] = 1
-    least_square_est(H, y)
-    
-print("H array : ")
-print(H)
-print("y array : ")
-print(y)
+        y[num] = CA_code - rho
+        H[num][0] = -1 * (cal_x)/rho
+        H[num][1] = -1 * (cal_y)/rho
+        H[num][2] = -1 * (cal_z)/rho
+        # H[num][3] = 299_792_458 # (m)
+        H[num][3] = x[3]
+
+    print(H)
+    x = least_square_est(H, y, x)
